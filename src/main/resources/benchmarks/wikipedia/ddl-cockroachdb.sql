@@ -91,19 +91,20 @@ CREATE INDEX idx_log_user_type_time ON logging (log_user, log_type, log_timestam
 CREATE INDEX idx_log_page_id_time ON logging (log_page, log_timestamp);
 
 CREATE TABLE page (
-    page_id           serial,
-    page_namespace    int              NOT NULL,
-    page_title        varchar          NOT NULL,
-    page_restrictions varchar(255)     NOT NULL,
-    page_counter      bigint           NOT NULL DEFAULT '0',
-    page_is_redirect  smallint         NOT NULL DEFAULT '0',
-    page_is_new       smallint         NOT NULL DEFAULT '0',
-    page_random       double precision NOT NULL,
-    page_touched      varchar(14)      NOT NULL DEFAULT '\0\0\0\0\0\0\0\0\0\0\0\0\0\0',
-    page_latest       int              NOT NULL,
-    page_len          int              NOT NULL,
-    PRIMARY KEY (page_id),
-    UNIQUE (page_namespace, page_title)
+                      page_id           serial,
+                      page_namespace    int              NOT NULL,
+                      page_title        varchar          NOT NULL,
+                      page_restrictions varchar(255)     NOT NULL,
+                      page_counter      bigint           NOT NULL DEFAULT '0',
+                      page_is_redirect  smallint         NOT NULL DEFAULT '0',
+                      page_is_new       smallint         NOT NULL DEFAULT '0',
+                      page_random       double precision NOT NULL,
+                      page_touched      varchar(14)      NOT NULL DEFAULT '\0\0\0\0\0\0\0\0\0\0\0\0\0\0',
+                      page_latest       int              NOT NULL,
+                      page_len          int              NOT NULL,
+                      PRIMARY KEY (page_id),
+                      UNIQUE (page_namespace, page_title),
+                      FOREIGN KEY (page_latest) REFERENCES revision (rev_id) ON DELETE CASCADE
 );
 CREATE INDEX idx_page_random ON page (page_random);
 CREATE INDEX idx_page_len ON page (page_len);
@@ -125,35 +126,35 @@ CREATE INDEX idx_pr_level ON page_restrictions (pr_level);
 CREATE INDEX idx_pr_cascade ON page_restrictions (pr_cascade);
 
 CREATE TABLE recentchanges (
-    rc_id             serial,
-    rc_timestamp      varchar(14)  NOT NULL DEFAULT '',
-    rc_cur_time       varchar(14)  NOT NULL DEFAULT '',
-    rc_user           int          NOT NULL DEFAULT '0',
-    rc_user_text      varchar(255) NOT NULL,
-    rc_namespace      int          NOT NULL DEFAULT '0',
-    rc_title          varchar(255) NOT NULL DEFAULT '',
-    rc_comment        varchar(255) NOT NULL DEFAULT '',
-    rc_minor          smallint     NOT NULL DEFAULT '0',
-    rc_bot            smallint     NOT NULL DEFAULT '0',
-    rc_new            smallint     NOT NULL DEFAULT '0',
-    rc_cur_id         int          NOT NULL DEFAULT '0',
-    rc_this_oldid     int          NOT NULL DEFAULT '0',
-    rc_last_oldid     int          NOT NULL DEFAULT '0',
-    rc_type           smallint     NOT NULL DEFAULT '0',
-    rc_moved_to_ns    smallint     NOT NULL DEFAULT '0',
-    rc_moved_to_title varchar(255) NOT NULL DEFAULT '',
-    rc_patrolled      smallint     NOT NULL DEFAULT '0',
-    rc_ip             varchar(40)  NOT NULL DEFAULT '',
-    rc_old_len        int                   DEFAULT NULL,
-    rc_new_len        int                   DEFAULT NULL,
-    rc_deleted        smallint     NOT NULL DEFAULT '0',
-    rc_logid          int          NOT NULL DEFAULT '0',
-    rc_log_type       varchar(255)          DEFAULT NULL,
-    rc_log_action     varchar(255)          DEFAULT NULL,
-    rc_params         varchar(255),
-    FOREIGN KEY (rc_user) REFERENCES useracct (user_id) ON DELETE CASCADE,
-    FOREIGN KEY (rc_cur_id) REFERENCES page (page_id) ON DELETE CASCADE,
-    PRIMARY KEY (rc_id)
+                               rc_id             serial,
+                               rc_timestamp      varchar(14)  NOT NULL DEFAULT '',
+                               rc_cur_time       varchar(14)  NOT NULL DEFAULT '',
+                               rc_user           int          NOT NULL DEFAULT '0',
+                               rc_user_text      varchar(255) NOT NULL,
+                               rc_namespace      int          NOT NULL DEFAULT '0',
+                               rc_title          varchar(255) NOT NULL DEFAULT '',
+                               rc_comment        varchar(255) NOT NULL DEFAULT '',
+                               rc_minor          smallint     NOT NULL DEFAULT '0',
+                               rc_bot            smallint     NOT NULL DEFAULT '0',
+                               rc_new            smallint     NOT NULL DEFAULT '0',
+                               rc_cur_id         int          NOT NULL DEFAULT '0',
+                               rc_this_oldid     int          NOT NULL DEFAULT '0',
+                               rc_last_oldid     int          NOT NULL DEFAULT '0',
+                               rc_type           smallint     NOT NULL DEFAULT '0',
+                               rc_moved_to_ns    smallint     NOT NULL DEFAULT '0',
+                               rc_moved_to_title varchar(255) NOT NULL DEFAULT '',
+                               rc_patrolled      smallint     NOT NULL DEFAULT '0',
+                               rc_ip             varchar(40)  NOT NULL DEFAULT '',
+                               rc_old_len        int                   DEFAULT NULL,
+                               rc_new_len        int                   DEFAULT NULL,
+                               rc_deleted        smallint     NOT NULL DEFAULT '0',
+                               rc_logid          int          NOT NULL DEFAULT '0',
+                               rc_log_type       varchar(255)          DEFAULT NULL,
+                               rc_log_action     varchar(255)          DEFAULT NULL,
+                               rc_params         varchar(255),
+                               FOREIGN KEY (rc_user) REFERENCES useracct (user_id) ON DELETE CASCADE,
+                               FOREIGN KEY (rc_cur_id) REFERENCES page (page_id) ON DELETE CASCADE,
+                               PRIMARY KEY (rc_id)
 );
 CREATE INDEX idx_rc_timestamp ON recentchanges (rc_timestamp);
 CREATE INDEX idx_rc_namespace_title ON recentchanges (rc_namespace, rc_title);
@@ -163,11 +164,22 @@ CREATE INDEX idx_rc_ip ON recentchanges (rc_ip);
 CREATE INDEX idx_rc_ns_usertext ON recentchanges (rc_namespace, rc_user_text);
 CREATE INDEX idx_rc_user_text ON recentchanges (rc_user_text, rc_timestamp);
 
-CREATE TABLE revision (
+CREATE TABLE text
+(
+    old_id    serial,
+    old_text  varchar(255) NOT NULL,
+    old_flags varchar(255) NOT NULL,
+    old_page  int DEFAULT NULL,
+    PRIMARY KEY (old_id)
+);
+
+
+CREATE TABLE revision
+(
     rev_id         serial,
     rev_page       int          NOT NULL,
     rev_text_id    int          NOT NULL,
-    rev_comment    text         NOT NULL,
+    rev_comment    varchar(255) NOT NULL,
     rev_user       int          NOT NULL DEFAULT '0',
     rev_user_text  varchar(255) NOT NULL DEFAULT '',
     rev_timestamp  varchar(14)  NOT NULL DEFAULT '\0\0\0\0\0\0\0\0\0\0\0\0\0\0',
@@ -178,20 +190,14 @@ CREATE TABLE revision (
     PRIMARY KEY (rev_id),
     UNIQUE (rev_page, rev_id),
     FOREIGN KEY (rev_user) REFERENCES useracct (user_id) ON DELETE CASCADE,
-    FOREIGN KEY (rev_page) REFERENCES page (page_id) ON DELETE CASCADE
+    FOREIGN KEY (rev_page) REFERENCES page (page_id) ON DELETE CASCADE,
+    FOREIGN KEY (rev_text_id) REFERENCES text (old_id) ON DELETE CASCADE
 );
 CREATE INDEX idx_rev_timestamp ON revision (rev_timestamp);
 CREATE INDEX idx_page_timestamp ON revision (rev_page, rev_timestamp);
 CREATE INDEX idx_user_timestamp ON revision (rev_user, rev_timestamp);
 CREATE INDEX idx_usertext_timestamp ON revision (rev_user_text, rev_timestamp);
 
-CREATE TABLE text (
-    old_id    serial,
-    old_text  text         NOT NULL,
-    old_flags varchar(255) NOT NULL,
-    old_page  int DEFAULT NULL,
-    PRIMARY KEY (old_id)
-);
 
 CREATE TABLE watchlist (
     wl_user                  int          NOT NULL,

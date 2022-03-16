@@ -49,21 +49,6 @@ public class WikipediaLoader extends Loader<WikipediaBenchmark> {
     private final int num_pages;
 
     /**
-     * UserId -> # of Revisions
-     */
-    private final int[] user_revision_ctr;
-
-    /**
-     * PageId -> Last Revision Id
-     */
-    private final int[] page_last_rev_id;
-
-    /**
-     * PageId -> Last Revision Length
-     */
-    private final int[] page_last_rev_length;
-
-    /**
      * Constructor
      *
      * @param benchmark
@@ -72,14 +57,6 @@ public class WikipediaLoader extends Loader<WikipediaBenchmark> {
         super(benchmark);
         this.num_users = (int) Math.round(WikipediaConstants.USERS * this.scaleFactor);
         this.num_pages = (int) Math.round(WikipediaConstants.PAGES * this.scaleFactor);
-
-        this.user_revision_ctr = new int[this.num_users];
-        Arrays.fill(this.user_revision_ctr, 0);
-
-        this.page_last_rev_id = new int[this.num_pages];
-        Arrays.fill(this.page_last_rev_id, -1);
-        this.page_last_rev_length = new int[this.num_pages];
-        Arrays.fill(this.page_last_rev_length, -1);
 
         if (LOG.isDebugEnabled()) {
             LOG.debug("# of USERS:  {}", this.num_users);
@@ -474,196 +451,126 @@ public class WikipediaLoader extends Loader<WikipediaBenchmark> {
      */
     private void loadRevision(Connection conn) throws SQLException {
 
-        // TEXT
-        Table textTable = benchmark.getCatalog().getTable(WikipediaConstants.TABLENAME_TEXT);
-        String textSQL = SQLUtil.getInsertSQL(textTable, this.getDatabaseType());
+        Random rand = benchmark.rng();
 
-
-        // REVISION
-        Table revTable = benchmark.getCatalog().getTable(WikipediaConstants.TABLENAME_REVISION);
-        String revSQL = SQLUtil.getInsertSQL(revTable, this.getDatabaseType());
-
-
-        Random rand = this.rng();
-
-
-        WikipediaBenchmark b = this.benchmark;
-        int batchSize = 1;
+        FlatHistogram<Integer> h_numRevisions = new FlatHistogram<>(rand, PageHistograms.REVISIONS_PER_PAGE);
         Zipf h_users = new Zipf(rand, 1, this.num_users, WikipediaConstants.REVISION_USER_SIGMA);
         FlatHistogram<Integer> h_textLength = new FlatHistogram<>(rand, TextHistograms.TEXT_LENGTH);
-        FlatHistogram<Integer> h_commentLength = b.commentLength;
-        FlatHistogram<Integer> h_minorEdit = b.minorEdit;
-        FlatHistogram<Integer> h_nameLength = new FlatHistogram<>(rand, UserHistograms.NAME_LENGTH);
-        FlatHistogram<Integer> h_numRevisions = new FlatHistogram<>(rand, PageHistograms.REVISIONS_PER_PAGE);
 
-        final int rev_comment_max = revTable.getColumnByName("rev_comment").getSize();
-        int rev_id = 1;
-        int lastPercent = -1;
+        Table textTable = benchmark.getCatalog().getTable(WikipediaConstants.TABLENAME_TEXT);
+        String textSql = SQLUtil.getInsertSQL(textTable, this.getDatabaseType());
+        int textMaxLength = textTable.getColumnByName("old_text").getSize();
 
-        try (PreparedStatement textInsert = conn.prepareStatement(textSQL);
-             PreparedStatement revisionInsert = conn.prepareStatement(revSQL)) {
-
-            for (int page_id = 1; page_id <= this.num_pages; page_id++) {
-                // There must be at least one revision per page
-                int num_revised = h_numRevisions.nextValue();
-
-                // Generate what the new revision is going to be
-                int old_text_length = h_textLength.nextValue();
-
-                char[] old_text = TextGenerator.randomChars(rand, old_text_length);
-
-                for (int i = 0; i < num_revised; i++) {
-                    // Generate the User who's doing the revision and the Page
-                    // revised
-                    // Makes sure that we always update their counter
-                    int user_id = h_users.nextInt();
-
-                    this.user_revision_ctr[user_id - 1]++;
-
-                    // Generate what the new revision is going to be
-                    if (i > 0) {
-                        old_text = b.generateRevisionText(old_text);
-                        old_text_length = old_text.length;
-                    }
-
-                    int rev_comment_len = Math.min(rev_comment_max, h_commentLength.nextValue() + 1); // HACK
-                    String rev_comment = TextGenerator.randomStr(rand, rev_comment_len);
-
-
-                    // The REV_USER_TEXT field is usually the username, but we'll
-                    // just
-                    // put in gibberish for now
-                    String user_text = TextGenerator.randomStr(rand, h_nameLength.nextValue() + 1);
-
-                    // Insert the text
-                    int col = 1;
-                    textInsert.setInt(col++, rev_id); // old_id
-                    textInsert.setString(col++, new String(old_text)); // old_text
-                    textInsert.setString(col++, "utf-8"); // old_flags
-                    textInsert.setInt(col, page_id); // old_page
-                    textInsert.addBatch();
-
-                    // Insert the revision
-                    col = 1;
-                    revisionInsert.setInt(col++, rev_id); // rev_id
-                    revisionInsert.setInt(col++, page_id); // rev_page
-                    revisionInsert.setInt(col++, rev_id); // rev_text_id
-                    revisionInsert.setString(col++, rev_comment); // rev_comment
-                    revisionInsert.setInt(col++, user_id); // rev_user
-                    revisionInsert.setString(col++, user_text); // rev_user_text
-                    revisionInsert.setString(col++, TimeUtil.getCurrentTimeString14()); // rev_timestamp
-                    revisionInsert.setInt(col++, h_minorEdit.nextValue()); // rev_minor_edit
-                    revisionInsert.setInt(col++, 0); // rev_deleted
-                    revisionInsert.setInt(col++, 0); // rev_len
-                    revisionInsert.setInt(col, 0); // rev_parent_id
-                    revisionInsert.addBatch();
-
-                    // Update Last Revision Stuff
-                    this.page_last_rev_id[page_id - 1] = rev_id;
-                    this.page_last_rev_length[page_id - 1] = old_text_length;
-                    rev_id++;
-                    batchSize++;
-                }
-                if (batchSize > workConf.getBatchSize()) {
-                    textInsert.executeBatch();
-                    revisionInsert.executeBatch();
-                    this.addToTableCount(textTable.getName(), batchSize);
-                    this.addToTableCount(revTable.getName(), batchSize);
-                    batchSize = 0;
-
-                    if (LOG.isDebugEnabled()) {
-                        int percent = (int) (((double) page_id / (double) this.num_pages) * 100);
-                        if (percent != lastPercent) {
-                            LOG.debug("REVISIONS ({}%)", percent);
-                        }
-                        lastPercent = percent;
-                    }
-                }
-            }
-        }
-        if (this.getDatabaseType() == DatabaseType.POSTGRES || this.getDatabaseType() == DatabaseType.COCKROACHDB) {
-            this.updateAutoIncrement(conn, textTable.getColumn(0), rev_id);
-            this.updateAutoIncrement(conn, revTable.getColumn(0), rev_id);
-        }
-
-        // UPDATE USER
-        updateUser(conn);
-
-        // UPDATE PAGES
-        updatePage(conn);
-
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("Revision loaded");
-        }
-    }
-
-    private void updateUser(Connection conn) throws SQLException {
+        Table revisionTable = benchmark.getCatalog().getTable(WikipediaConstants.TABLENAME_REVISION);
+        String revisionSql = SQLUtil.getInsertSQL(revisionTable, this.getDatabaseType());
 
         Table userTable = benchmark.getCatalog().getTable(WikipediaConstants.TABLENAME_USER);
-
         String userTableName = (this.getDatabaseType().shouldEscapeNames()) ? userTable.getEscapedName() : userTable.getName();
+        String userSql = "UPDATE " + userTableName + " SET user_editcount = user_editcount + 1, user_touched = ? WHERE user_id = ?";
 
-        String updateUserSql = "UPDATE " + userTableName + " SET user_editcount = ?, user_touched = ? WHERE user_id = ?";
+        Table pageTable = benchmark.getCatalog().getTable(WikipediaConstants.TABLENAME_PAGE);
+        String pageTableName = (this.getDatabaseType().shouldEscapeNames()) ? pageTable.getEscapedName() : pageTable.getName();
+        String pageSql = "UPDATE " + pageTableName + " SET page_latest = ?, page_touched = ?, page_is_new = 0, page_is_redirect = 0, page_len = ? WHERE page_id = ?";
 
-        try (PreparedStatement userUpdate = conn.prepareStatement(updateUserSql)) {
-            int batchSize = 0;
 
-            for (int i = 0; i < this.num_users; i++) {
-                int col = 1;
-                userUpdate.setInt(col++, this.user_revision_ctr[i]);
-                userUpdate.setString(col++, TimeUtil.getCurrentTimeString14());
-                userUpdate.setInt(col, i + 1); // ids start at 1
-                userUpdate.addBatch();
+        int revId = 1;
 
-                if ((++batchSize % workConf.getBatchSize()) == 0) {
-                    userUpdate.executeBatch();
-                    userUpdate.clearBatch();
-                    batchSize = 0;
+        for (int page_id = 1; page_id <= this.num_pages; page_id++) {
+
+            int num_revised = h_numRevisions.nextValue();
+
+            int targetTextLength = Math.min(textMaxLength, h_textLength.nextValue());
+
+            char[] text = TextGenerator.randomChars(rand, targetTextLength);
+
+            for (int i = 0; i < num_revised; i++) {
+
+                if (i == 0) {
+                    insertText(conn, textSql, revId, String.valueOf(text), page_id);
+                } else {
+                    text = this.benchmark.generateRevisionText(text);
                 }
+
+                int userId = h_users.nextInt();
+
+                insertRevision(conn, revisionSql, revId, page_id, revId, null, userId, null, this.benchmark.minorEdit.nextValue());
+
+                updateUser(conn, userSql, userId);
+
+                updatePage(conn, pageSql, revId, text.length, page_id);
+
+                revId++;
             }
 
-            if (batchSize > 0) {
-                userUpdate.executeBatch();
-                userUpdate.clearBatch();
-            }
+
+        }
+
+    }
+
+    private void insertText(Connection conn, String sql, int textId, String text, int pageId) throws SQLException {
+
+
+        try (PreparedStatement textInsert = conn.prepareStatement(sql)) {
+
+            textInsert.setInt(1, textId); // old_id
+            textInsert.setString(2, text); // old_text
+            textInsert.setString(3, "utf-8"); // old_flags
+            textInsert.setInt(4, pageId); // old_page
+
+            int updated = textInsert.executeUpdate();
+
         }
     }
 
-    private void updatePage(Connection conn) throws SQLException {
+    private void insertRevision(Connection conn, String sql, int revId, int pageId, int textId, String comment, int userId, String userText, int minorEdit) throws SQLException {
 
-        Table pageTable = benchmark.getCatalog().getTable(WikipediaConstants.TABLENAME_PAGE);
 
-        String pageTableName = (this.getDatabaseType().shouldEscapeNames()) ? pageTable.getEscapedName() : pageTable.getName();
+        try (PreparedStatement revisionInsert = conn.prepareStatement(sql)) {
 
-        String updatePageSql = "UPDATE " + pageTableName + " SET page_latest = ?, page_touched = ?, page_is_new = 0, page_is_redirect = 0, page_len = ? WHERE page_id = ?";
+            revisionInsert.setInt(1, revId); // rev_id
+            revisionInsert.setInt(2, pageId); // rev_page
+            revisionInsert.setInt(3, textId); // rev_text_id
+            revisionInsert.setString(4, comment); // rev_comment
+            revisionInsert.setInt(5, userId); // rev_user
+            revisionInsert.setString(6, userText); // rev_user_text
+            revisionInsert.setString(7, TimeUtil.getCurrentTimeString14()); // rev_timestamp
+            revisionInsert.setInt(8, minorEdit); // rev_minor_edit
+            revisionInsert.setInt(9, 0); // rev_deleted
+            revisionInsert.setInt(10, 0); // rev_len
+            revisionInsert.setInt(11, 0); // rev_parent_id
 
-        try (PreparedStatement pageUpdate = conn.prepareStatement(updatePageSql)) {
+            int updated = revisionInsert.executeUpdate();
 
-            int batchSize = 0;
 
-            for (int i = 0; i < this.num_pages; i++) {
+        }
+    }
 
-                if (this.page_last_rev_id[i] == -1) {
-                    continue;
-                }
+    private void updateUser(Connection conn, String sql, int userId) throws SQLException {
 
-                int col = 1;
-                pageUpdate.setInt(col++, this.page_last_rev_id[i]);
-                pageUpdate.setString(col++, TimeUtil.getCurrentTimeString14());
-                pageUpdate.setInt(col++, this.page_last_rev_length[i]);
-                pageUpdate.setInt(col, i + 1); // ids start at 1
-                pageUpdate.addBatch();
 
-                if ((++batchSize % workConf.getBatchSize()) == 0) {
-                    pageUpdate.executeBatch();
-                    pageUpdate.clearBatch();
-                    batchSize = 0;
-                }
-            }
-            if (batchSize > 0) {
-                pageUpdate.executeBatch();
-                pageUpdate.clearBatch();
-            }
+        try (PreparedStatement userUpdate = conn.prepareStatement(sql)) {
+
+            userUpdate.setString(1, TimeUtil.getCurrentTimeString14());
+            userUpdate.setInt(2, userId);
+
+            int updated = userUpdate.executeUpdate();
+
+
+        }
+    }
+
+    private void updatePage(Connection conn, String sql, int revId, int revLength, int pageId) throws SQLException {
+
+
+        try (PreparedStatement pageUpdate = conn.prepareStatement(sql)) {
+
+            pageUpdate.setInt(1, revId);
+            pageUpdate.setString(2, TimeUtil.getCurrentTimeString14());
+            pageUpdate.setInt(3, revLength);
+            pageUpdate.setInt(4, pageId);
+
+            int updated = pageUpdate.executeUpdate();
+
         }
     }
 }

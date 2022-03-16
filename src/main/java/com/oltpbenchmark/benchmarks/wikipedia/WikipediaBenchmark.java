@@ -94,7 +94,7 @@ public class WikipediaBenchmark extends BenchmarkModule {
             orig_text = TextGenerator.resizeText(this.rng(), orig_text, delta);
         }
 
-        // And permute it a little bit. This ensures that the text is slightly
+        // And permute it a litle bit. This ensures that the text is slightly
         // different than the last revision
         orig_text = TextGenerator.permuteText(this.rng(), orig_text);
 
