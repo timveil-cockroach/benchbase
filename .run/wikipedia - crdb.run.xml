@@ -3,7 +3,7 @@
     <output_file path="wikipedia.crdb.log" is_save="true"/>
     <option name="MAIN_CLASS_NAME" value="com.oltpbenchmark.DBWorkload" />
     <module name="benchbase" />
-      <option name="PROGRAM_PARAMETERS" value="-d config/db/cockroachdb.xml -w config/workload/wikipedia.xml --create=true --load=false --execute=false"/>
+      <option name="PROGRAM_PARAMETERS" value="-d config/db/cockroachdb.xml -w config/workload/wikipedia.xml --create=true --load=true --execute=false"/>
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="com.oltpbenchmark.*" />

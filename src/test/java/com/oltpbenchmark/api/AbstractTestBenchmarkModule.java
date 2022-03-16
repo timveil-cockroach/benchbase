@@ -44,8 +44,6 @@ public abstract class AbstractTestBenchmarkModule<T extends BenchmarkModule> ext
     public void testCreateDatabase() throws Exception {
         this.benchmark.createDatabase();
 
-        // Make sure that we get back some tables
-        this.benchmark.refreshCatalog();
         AbstractCatalog catalog = this.benchmark.getCatalog();
         assertNotNull(catalog);
         assertFalse(catalog.getTables().isEmpty());

@@ -456,10 +456,10 @@ public class WikipediaLoader extends Loader<WikipediaBenchmark> {
         FlatHistogram<Integer> h_numRevisions = new FlatHistogram<>(rand, PageHistograms.REVISIONS_PER_PAGE);
         Zipf h_users = new Zipf(rand, 1, this.num_users, WikipediaConstants.REVISION_USER_SIGMA);
         FlatHistogram<Integer> h_textLength = new FlatHistogram<>(rand, TextHistograms.TEXT_LENGTH);
+        FlatHistogram<Integer> h_nameLength = new FlatHistogram<>(rand, UserHistograms.NAME_LENGTH);
 
         Table textTable = benchmark.getCatalog().getTable(WikipediaConstants.TABLENAME_TEXT);
         String textSql = SQLUtil.getInsertSQL(textTable, this.getDatabaseType());
-        int textMaxLength = textTable.getColumnByName("old_text").getSize();
 
         Table revisionTable = benchmark.getCatalog().getTable(WikipediaConstants.TABLENAME_REVISION);
         String revisionSql = SQLUtil.getInsertSQL(revisionTable, this.getDatabaseType());
@@ -472,43 +472,47 @@ public class WikipediaLoader extends Loader<WikipediaBenchmark> {
         String pageTableName = (this.getDatabaseType().shouldEscapeNames()) ? pageTable.getEscapedName() : pageTable.getName();
         String pageSql = "UPDATE " + pageTableName + " SET page_latest = ?, page_touched = ?, page_is_new = 0, page_is_redirect = 0, page_len = ? WHERE page_id = ?";
 
-
         int revId = 1;
 
         for (int page_id = 1; page_id <= this.num_pages; page_id++) {
 
             int num_revised = h_numRevisions.nextValue();
 
-            int targetTextLength = Math.min(textMaxLength, h_textLength.nextValue());
-
-            char[] text = TextGenerator.randomChars(rand, targetTextLength);
+            int maxTextLength = Math.min(this.benchmark.textMaxLength, h_textLength.nextValue());
+            char[] text = TextGenerator.randomChars(rand, maxTextLength);
 
             for (int i = 0; i < num_revised; i++) {
 
-                if (i == 0) {
+                try {
+
+                    if (i != 0) {
+                        text = this.benchmark.generateRevisionText(text, maxTextLength);
+                    }
+
                     insertText(conn, textSql, revId, String.valueOf(text), page_id);
-                } else {
-                    text = this.benchmark.generateRevisionText(text);
+
+                    int userId = h_users.nextInt();
+
+                    String revComment = TextGenerator.randomStr(rand, Math.min(this.benchmark.revCommentMaxLength, this.benchmark.commentLength.nextValue()));
+
+                    String userText = TextGenerator.randomStr(rand, Math.min(this.benchmark.userTextMaxLength, h_nameLength.nextValue()));
+
+                    insertRevision(conn, revisionSql, revId, page_id, revId, revComment, userId, userText, this.benchmark.minorEdit.nextValue());
+
+                    updateUser(conn, userSql, userId);
+
+                    updatePage(conn, pageSql, revId, text.length, page_id);
+
+                } catch (Exception e) {
+                    LOG.error(e.getMessage(), e);
+                } finally {
+                    revId++;
                 }
-
-                int userId = h_users.nextInt();
-
-                insertRevision(conn, revisionSql, revId, page_id, revId, null, userId, null, this.benchmark.minorEdit.nextValue());
-
-                updateUser(conn, userSql, userId);
-
-                updatePage(conn, pageSql, revId, text.length, page_id);
-
-                revId++;
             }
-
-
         }
-
     }
 
     private void insertText(Connection conn, String sql, int textId, String text, int pageId) throws SQLException {
-
 
         try (PreparedStatement textInsert = conn.prepareStatement(sql)) {
 
@@ -523,7 +527,6 @@ public class WikipediaLoader extends Loader<WikipediaBenchmark> {
     }
 
     private void insertRevision(Connection conn, String sql, int revId, int pageId, int textId, String comment, int userId, String userText, int minorEdit) throws SQLException {
-
 
         try (PreparedStatement revisionInsert = conn.prepareStatement(sql)) {
 
@@ -547,7 +550,6 @@ public class WikipediaLoader extends Loader<WikipediaBenchmark> {
 
     private void updateUser(Connection conn, String sql, int userId) throws SQLException {
 
-
         try (PreparedStatement userUpdate = conn.prepareStatement(sql)) {
 
             userUpdate.setString(1, TimeUtil.getCurrentTimeString14());
@@ -560,7 +562,6 @@ public class WikipediaLoader extends Loader<WikipediaBenchmark> {
     }
 
     private void updatePage(Connection conn, String sql, int revId, int revLength, int pageId) throws SQLException {
-
 
         try (PreparedStatement pageUpdate = conn.prepareStatement(sql)) {
 

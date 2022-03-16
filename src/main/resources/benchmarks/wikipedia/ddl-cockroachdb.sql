@@ -103,8 +103,7 @@ CREATE TABLE page (
                       page_latest       int              NOT NULL,
                       page_len          int              NOT NULL,
                       PRIMARY KEY (page_id),
-                      UNIQUE (page_namespace, page_title),
-                      FOREIGN KEY (page_latest) REFERENCES revision (rev_id) ON DELETE CASCADE
+                      UNIQUE (page_namespace, page_title)
 );
 CREATE INDEX idx_page_random ON page (page_random);
 CREATE INDEX idx_page_len ON page (page_len);

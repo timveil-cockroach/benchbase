@@ -64,12 +64,19 @@ public abstract class BenchmarkModule {
      */
     private final Random rng = new Random();
 
-    private AbstractCatalog catalog = null;
+    private final AbstractCatalog catalog;
 
     public BenchmarkModule(String benchmarkName, WorkloadConfiguration workConf) {
         this.benchmarkName = benchmarkName;
         this.workConf = workConf;
         this.dialects = new StatementDialects(benchmarkName, workConf.getDatabaseType());
+
+        try (Connection conn = makeConnection()) {
+            this.catalog = SQLUtil.getCatalog(this, this.getWorkloadConfiguration().getDatabaseType(), conn);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+
     }
 
     // --------------------------------------------------------------------------
@@ -162,19 +169,6 @@ public abstract class BenchmarkModule {
         return (this.makeWorkersImpl());
     }
 
-    public final void refreshCatalog() throws SQLException {
-        if (this.catalog != null) {
-            try {
-                this.catalog.close();
-            } catch (SQLException throwables) {
-                LOG.error(throwables.getMessage(), throwables);
-            }
-        }
-        try (Connection conn = this.makeConnection()) {
-            this.catalog = SQLUtil.getCatalog(this, this.getWorkloadConfiguration().getDatabaseType(), conn);
-        }
-    }
-
     /**
      * Create the Benchmark Database
      * This is the main method used to create all the database
@@ -261,11 +255,6 @@ public abstract class BenchmarkModule {
      * Return the database's catalog
      */
     public final AbstractCatalog getCatalog() {
-
-        if (catalog == null) {
-            throw new RuntimeException("getCatalog() has been called before refreshCatalog()");
-        }
-
         return this.catalog;
     }
 

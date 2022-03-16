@@ -126,19 +126,12 @@ public class DBWorkload {
             LOG.debug("Skipping creating benchmark database tables");
         }
 
-        // Refresh the catalog.
-        for (BenchmarkModule benchmark : benchList) {
-            benchmark.refreshCatalog();
-        }
-
         // Clear the Benchmark's Database
         if (isBooleanOptionSet(argsLine, "clear")) {
             try {
                 for (BenchmarkModule benchmark : benchList) {
                     LOG.info("Clearing {} database...", benchmark.getBenchmarkName().toUpperCase());
-                    benchmark.refreshCatalog();
                     benchmark.clearDatabase();
-                    benchmark.refreshCatalog();
                     LOG.info("Finished clearing {} database...", benchmark.getBenchmarkName().toUpperCase());
                 }
             } catch (Throwable ex) {

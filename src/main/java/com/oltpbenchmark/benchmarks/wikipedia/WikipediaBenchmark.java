@@ -24,12 +24,14 @@ import com.oltpbenchmark.api.Worker;
 import com.oltpbenchmark.benchmarks.wikipedia.data.RevisionHistograms;
 import com.oltpbenchmark.benchmarks.wikipedia.procedures.AddWatchList;
 import com.oltpbenchmark.benchmarks.wikipedia.util.WikipediaUtil;
+import com.oltpbenchmark.catalog.Table;
 import com.oltpbenchmark.util.RandomDistribution.FlatHistogram;
 import com.oltpbenchmark.util.TextGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class WikipediaBenchmark extends BenchmarkModule {
@@ -40,6 +42,10 @@ public class WikipediaBenchmark extends BenchmarkModule {
     protected final FlatHistogram<Integer> minorEdit;
     private final FlatHistogram<Integer>[] revisionDeltas;
     protected final WikipediaUtil util;
+
+    protected final int textMaxLength;
+    protected final int revCommentMaxLength;
+    protected final int userTextMaxLength;
 
     @SuppressWarnings("unchecked")
     public WikipediaBenchmark(WorkloadConfiguration workConf) {
@@ -54,6 +60,13 @@ public class WikipediaBenchmark extends BenchmarkModule {
 
         util = new WikipediaUtil(this.rng());
 
+        Table textTable = this.getCatalog().getTable(WikipediaConstants.TABLENAME_TEXT);
+        textMaxLength = textTable.getColumnByName("old_text").getSize();
+
+        Table revisionTable = this.getCatalog().getTable(WikipediaConstants.TABLENAME_REVISION);
+        revCommentMaxLength = revisionTable.getColumnByName("rev_comment").getSize();
+        userTextMaxLength = revisionTable.getColumnByName("rev_user_text").getSize();
+
     }
 
     /**
@@ -63,9 +76,10 @@ public class WikipediaBenchmark extends BenchmarkModule {
      * don't have a bunch of random text fields for the same page.
      *
      * @param orig_text
+     * @param maxLength
      * @return
      */
-    protected char[] generateRevisionText(char[] orig_text) {
+    protected char[] generateRevisionText(char[] orig_text, int maxLength) {
         // Figure out how much we are going to change
         // If the delta is greater than the length of the original
         // text, then we will just cut our length in half.
@@ -94,9 +108,12 @@ public class WikipediaBenchmark extends BenchmarkModule {
             orig_text = TextGenerator.resizeText(this.rng(), orig_text, delta);
         }
 
-        // And permute it a litle bit. This ensures that the text is slightly
-        // different than the last revision
+        // And permute it a little. This ensures that the text is slightly different from the last revision
         orig_text = TextGenerator.permuteText(this.rng(), orig_text);
+
+        if (orig_text.length > maxLength) {
+            orig_text = Arrays.copyOfRange(orig_text, 0, maxLength - 1);
+        }
 
         return (orig_text);
     }

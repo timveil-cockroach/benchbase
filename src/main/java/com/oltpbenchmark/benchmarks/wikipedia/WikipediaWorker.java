@@ -161,19 +161,19 @@ public class WikipediaWorker extends Worker<WikipediaBenchmark> {
         }
 
         WikipediaBenchmark b = this.getBenchmarkModule();
-        int revCommentLen = b.commentLength.nextValue();
-        String revComment = TextGenerator.randomStr(this.rng(), revCommentLen + 1);
+
+        String revComment = TextGenerator.randomStr(this.rng(), Math.min(b.revCommentMaxLength, b.commentLength.nextValue()));
+
         int revMinorEdit = b.minorEdit.nextValue();
 
         // Permute the original text of the article
         // Important: We have to make sure that we fill in the entire array
-        char[] newText = b.generateRevisionText(a.oldText.toCharArray());
+        char[] newText = b.generateRevisionText(a.oldText.toCharArray(), b.revCommentMaxLength);
 
         if (LOG.isTraceEnabled()) {
             LOG.trace("UPDATING: Page: id:{} ns:{} title{}", a.pageId, nameSpace, pageTitle);
         }
         UpdatePage proc = this.getProcedure(UpdatePage.class);
-
 
         proc.run(conn, a.textId, a.pageId, pageTitle, new String(newText), nameSpace, userId, userIp, a.userText, a.revisionId, revComment, revMinorEdit);
 

@@ -82,7 +82,6 @@ public abstract class AbstractTestCase<T extends BenchmarkModule> extends TestCa
         assertNotNull(this.benchmark);
         LOG.debug(DB_TYPE + "::" + this.benchmark + " -> " + this.dbName);
 
-        this.benchmark.refreshCatalog();
         this.catalog = this.benchmark.getCatalog();
         assertNotNull(this.catalog);
         this.conn = this.benchmark.makeConnection();
